@@ -14,6 +14,14 @@ traffic_volume_data = spark.read.csv("/user/s2186047/project/NY-Automated-Traffi
 # Fire incident preprocessing
 filteredColumns = fire_incident_data_NY.select("IM_INCIDENT_KEY", "INCIDENT_TYPE_DESC", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "HIGHEST_LEVEL_DESC")
 
+def saveDf(df, filename):
+  # NOT TEST YET, getting a connection error
+  # file_directory = "hdfs://s2186047@spark-head6.eemcs.utwente.nl/user/s2186047/SKEW"
+  file_directory = "./project-results"
+  path = file_directory + "/" + filename
+  df.write.format("csv").mode('overwrite').option("header", "true").save(path)
+  print("****************** DATAFRAME SAVED IN CSV AT: " + path + " ******************")
+
 # data cleaning
 filteredColumns = filteredColumns.filter(
     (filteredColumns["BOROUGH_DESC"] == "1 - Manhattan") | 
@@ -97,49 +105,61 @@ fireStationCounts = firehouse_listings_data_NY.groupBy("Borough").agg(
 #ADDED TO MATCH WITH TRAFFIC VOLUME DATA (as prefix 1. - , 2. -, etc. are not present in that dataset)
 fire_incident_data_preprocessed = filteredColumns.withColumn("BOROUGH_DESC", regexp_replace("BOROUGH_DESC", "^\d+ - ", ""))
 
-# Calculate mean and standard deviation of response times per borough and alarm group
-stats_per_borough_alarm = fire_incident_data_preprocessed.groupBy("BOROUGH_DESC", "alarm_group") \
+# Calculate mean and standard deviation of response times per borough
+stats_per_borough = fire_incident_data_preprocessed.groupBy("BOROUGH_DESC") \
                                          .agg(
                                              avg("response_time_seconds").alias("mean_response_time"),
                                              stddev("response_time_seconds").alias("stddev_response_time")
                                          )
-stats_per_borough_alarm = stats_per_borough_alarm.orderBy("BOROUGH_DESC", "alarm_group")
-stats_per_borough_alarm = stats_per_borough_alarm.join(fireStationCounts, stats_per_borough_alarm["BOROUGH_DESC"]==fireStationCounts["Borough"], "left")
-stats_per_borough_alarm = stats_per_borough_alarm.drop("Borough")
-stats_per_borough_alarm.show(truncate=False)
+stats_per_borough = stats_per_borough.orderBy("BOROUGH_DESC")
+stats_per_borough = stats_per_borough.join(fireStationCounts, stats_per_borough["BOROUGH_DESC"]==fireStationCounts["Borough"], "left")
+stats_per_borough = stats_per_borough.drop("Borough")
+# stats_per_borough.show(truncate=False)
+saveDf(stats_per_borough, f"NYC_per_borough_response_time_trend")
 
 # Traffic volume data preprocessing
 grouped_traffic_volume = traffic_volume_data \
         .filter(col("Yr").between(start_year, end_year)) \
         .groupby(["Boro", "Yr"]).agg(spark_sum("Vol").alias("traffic_volume_counts"))
-
-
+saveDf(grouped_traffic_volume, f"NYC_per_year_traffic_volume_trend")
 
 # Calculate mean and standard deviation per borough and alarm group
-grouped_fire_incident_data = fire_incident_data_preprocessed.groupBy("year", "BOROUGH_DESC", "alarm_group") \
-                    .agg(
+#"BOROUGH_DESC", "alarm_group"
+grouped_fire_incident_data = fire_incident_data_preprocessed.groupBy("year")
+
+                    # .agg(
+                    #     avg("response_time_seconds").alias("mean_response_time"),
+                    #     stddev("response_time_seconds").alias("stddev_response_time")
+                    # )
+
+pivot_table = grouped_fire_incident_data.pivot("alarm_group", ["Initial Alarm", "Standard Alarm", "Critical Alarm"]) \
+                        .agg(
                         avg("response_time_seconds").alias("mean_response_time"),
                         stddev("response_time_seconds").alias("stddev_response_time")
-                    )
+                    ).sort("year")
+# pivot_table.show(truncate=False)
+saveDf(pivot_table, f"NYC_per_year_response_time_trend")
 
 # Create separate tables for each year (2013–2023)
-for year in range(start_year, end_year + 1): #exclusive end
-    yearly_fire_incident_data = grouped_fire_incident_data.filter(grouped_fire_incident_data["year"] == year)
+# for year in range(start_year, end_year + 1): #exclusive end
+#     yearly_fire_incident_data = grouped_fire_incident_data.filter(grouped_fire_incident_data["year"] == year)
     
-    # Pivot the table to match the design
-    pivot_table = yearly_fire_incident_data.groupBy("BOROUGH_DESC").pivot("alarm_group", ["Initial Alarm", "Standard Alarm", "Critical Alarm"]) \
-                       .agg(
-                           first("mean_response_time").alias("mean"),
-                           first("stddev_response_time").alias("stddev")
-                       )
+#     # Pivot the table to match the design
+#     pivot_table = yearly_fire_incident_data.groupBy("BOROUGH_DESC").pivot("alarm_group", ["Initial Alarm", "Standard Alarm", "Critical Alarm"]) \
+#                        .agg(
+#                            first("mean_response_time").alias("mean"),
+#                            first("stddev_response_time").alias("stddev")
+#                        )
     
-    grouped_yearly_traffic_data = grouped_traffic_volume.filter(grouped_traffic_volume["Yr"] == year).select(["Boro", "traffic_volume_counts"])
+#     grouped_yearly_traffic_data = grouped_traffic_volume.filter(grouped_traffic_volume["Yr"] == year).select(["Boro", "traffic_volume_counts"])
 
-    yearly_data = pivot_table.join(grouped_yearly_traffic_data, pivot_table["BOROUGH_DESC"] == grouped_yearly_traffic_data["Boro"], "left")
-    yearly_data = yearly_data.drop("Boro")
-    print(f"Year: {year}")
-    print("new way")
-    yearly_data.show(truncate=False)
-
+#     yearly_data = pivot_table.join(grouped_yearly_traffic_data, pivot_table["BOROUGH_DESC"] == grouped_yearly_traffic_data["Boro"], "left")
+#     yearly_data = yearly_data.drop("Boro")
+#     print(f"Year: {year}")
+#     print("new way")
+#     yearly_data.show(truncate=False)
+#     # saveDf(yearly_data, f"NYC_per_borough_{year}")
+    
+# saveDf(stats_per_borough_alarm, f"NYC_per_borough_total")
 # Stop SparkSession
 spark.stop()
