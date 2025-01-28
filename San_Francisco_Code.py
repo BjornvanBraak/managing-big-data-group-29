@@ -10,7 +10,7 @@ spark = SparkSession.builder    \
 # Import necessary functions
 from pyspark.sql.functions import col, to_timestamp, unix_timestamp, avg, when, first, count, stddev, countDistinct
 
-data = spark.read.csv("file:///home/s2502720/project/sf/San_Francisco_Fire_Incidents.csv", header = True, inferSchema = True)
+data = spark.read.csv("/user/s2502720/San_Francisco_Fire_Incidents.csv", header = True, inferSchema = True)
 
 # Make sure timestamps are formatted as datetimes
 data = data.withColumn("Alarm Time", to_timestamp("Alarm DtTm", "yyyy/MM/dd hh:mm:ss a"))
