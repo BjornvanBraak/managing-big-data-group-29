@@ -6,12 +6,16 @@ spark = SparkSession.builder    \
     .appName("Zipcode Analysis")   \
     .getOrCreate()
 
-# Load data
-data = spark.read.csv("file:///home/s2106841/New York Dataset Fire Department Response Time.csv", header=True, inferSchema=True)
-data2 = spark.read.csv("file:////home/s2106841/FDNY_Firehouse_Listing.csv", header=True, inferSchema=True)
+spark.sparkContext.setLogLevel("ERROR")
+
+# Load fire_incident_data
+fire_incident_data = spark.read.csv("/user/s2186047/project/NY-Fire-Incidents.csv", header=True, inferSchema=True)
+firehouse_listings_data = spark.read.csv("/user/s2186047/project/NY-Firehouse-Listing.csv", header=True, inferSchema=True)
+traffic_volume_data = spark.read.csv("/user/s2186047/project/NY-Automated-Traffic-Volume-Counts.csv", header=True, inferSchema=True)
+
 
 # Filter relevant columns (assuming 'ZIPCODE' and 'TOTAL_INCIDENT_DURATION' are part of the dataset)
-filteredColumns = data.select("IM_INCIDENT_KEY", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "ZIP_CODE")
+filteredColumns = fire_incident_data.select("IM_INCIDENT_KEY", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "ZIP_CODE")
 
 
 # Turn INCIDENT_DATE_TIME, ARRIVAL_DATE_TIME & LAST_UNIT_CLEARED_DATE_TIME into usable variables
@@ -31,9 +35,11 @@ filteredColumns = filteredColumns.filter(
     filteredColumns["response_time_seconds"].isNotNull() &
     filteredColumns["handling_time_seconds"].isNotNull()
 )
+
+
 # Firestation data
-fireStationCounts = data2.groupBy("Postcode").agg(
-    count("Postcode").alias("Number of Stations")
+fireStationCounts = firehouse_listings_data.groupBy("Postcode").agg(
+  count("Postcode").alias("Number of Stations")
 )
 fireStationCounts = fireStationCounts.withColumnRenamed("Postcode", "ZIP_CODE")
 
