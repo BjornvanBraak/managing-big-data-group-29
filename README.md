@@ -15,7 +15,10 @@ spark-submit NYC_per_borough.py --conf spark.dynamicAllocation.maxExecutors=5
 ```
 
 ## RQ1.2
-
+The comparison per zipcode, two python files were created.
 ```shell
 spark-submit NYC_per_zipcode.py --conf spark.dynamicAllocation.maxExecutors=5
+```
+```shell
+spark-submit San_Fransisco_Code.py --conf spark.dynamicAllocation.maxExecutors=5
 ```
