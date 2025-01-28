@@ -1,6 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, unix_timestamp, avg, stddev, year, when, first, count
-
+from pyspark.sql.functions import col, to_timestamp, unix_timestamp, avg, stddev, count
 # Initialize SparkSession
 spark = SparkSession.builder    \
     .appName("Zipcode Analysis")   \
@@ -8,20 +7,18 @@ spark = SparkSession.builder    \
 
 spark.sparkContext.setLogLevel("ERROR")
 
-# Load fire_incident_data
-fire_incident_data = spark.read.csv("/user/s2186047/project/NY-Fire-Incidents.csv", header=True, inferSchema=True)
-firehouse_listings_data = spark.read.csv("/user/s2186047/project/NY-Firehouse-Listing.csv", header=True, inferSchema=True)
-traffic_volume_data = spark.read.csv("/user/s2186047/project/NY-Automated-Traffic-Volume-Counts.csv", header=True, inferSchema=True)
+# Load NY datasets
+fire_incident_data_NY = spark.read.csv("/user/s2186047/project/NY-Fire-Incidents.csv", header=True, inferSchema=True)
+firehouse_listings_data_NY = spark.read.csv("/user/s2186047/project/NY-Firehouse-Listing.csv", header=True, inferSchema=True)
 
-
+# Fire incident preprocessing
 # Filter relevant columns (assuming 'ZIPCODE' and 'TOTAL_INCIDENT_DURATION' are part of the dataset)
-filteredColumns = fire_incident_data.select("IM_INCIDENT_KEY", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "ZIP_CODE")
+filteredColumns = fire_incident_data_NY.select("IM_INCIDENT_KEY", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "ZIP_CODE")
 
 
 # Turn INCIDENT_DATE_TIME, ARRIVAL_DATE_TIME & LAST_UNIT_CLEARED_DATE_TIME into usable variables
-filteredColumns = filteredColumns.withColumn("INCIDENT_DATE_TIME", to_timestamp("INCIDENT_DATE_TIME", "MM/dd/yyyy HH:mm:ss a"))
-filteredColumns = filteredColumns.withColumn("ARRIVAL_DATE_TIME", to_timestamp("ARRIVAL_DATE_TIME", "MM/dd/yyyy HH:mm:ss a"))
-filteredColumns = filteredColumns.withColumn("LAST_UNIT_CLEARED_DATE_TIME", to_timestamp("LAST_UNIT_CLEARED_DATE_TIME", "MM/dd/yyyy HH:mm:ss a"))
+for date_column in ["INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME"]:
+    filteredColumns = filteredColumns.withColumn(date_column, to_timestamp(date_column, "MM/dd/yyyy HH:mm:ss a"))
 
 # Create a new column for the calculated response_time_seconds & handling_time_seconds
 filteredColumns = filteredColumns.withColumn("response_time_seconds", 
@@ -36,9 +33,8 @@ filteredColumns = filteredColumns.filter(
     filteredColumns["handling_time_seconds"].isNotNull()
 )
 
-
-# Firestation data
-fireStationCounts = firehouse_listings_data.groupBy("Postcode").agg(
+# Firestation data preprocessing
+fireStationCounts = firehouse_listings_data_NY.groupBy("Postcode").agg(
   count("Postcode").alias("Number of Stations")
 )
 fireStationCounts = fireStationCounts.withColumnRenamed("Postcode", "ZIP_CODE")
