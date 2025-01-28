@@ -13,6 +13,7 @@ traffic_volume_data = spark.read.csv("/user/s2186047/project/NY-Automated-Traffi
 # Fire incident preprocessing
 filteredColumns = fire_incident_data_NY.select("IM_INCIDENT_KEY", "INCIDENT_TYPE_DESC", "INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME", "BOROUGH_DESC", "HIGHEST_LEVEL_DESC")
 
+# data cleaning
 filteredColumns = filteredColumns.filter(
     (filteredColumns["BOROUGH_DESC"] == "1 - Manhattan") | 
     (filteredColumns["BOROUGH_DESC"] == "2 - Bronx") | 
@@ -51,11 +52,23 @@ alarm_order = ["Initial Alarm", "Standard Alarm", "Moderate Alarm", "Critical Al
 
 #Turn INCIDENT_DATE_TIME & ARRIVAL_DATE_TIME into usable variables
 #Create a new column for the calculated response_time_seconds
-filteredColumns = filteredColumns.withColumn("INCIDENT_DATE_TIME", to_timestamp("INCIDENT_DATE_TIME", "MM/dd/yyyy HH:mm:ss a"))
-filteredColumns = filteredColumns.withColumn("ARRIVAL_DATE_TIME", to_timestamp("ARRIVAL_DATE_TIME", "MM/dd/yyyy HH:mm:ss a"))
+for date_column in ["INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME"]:
+    filteredColumns = filteredColumns.withColumn(date_column, to_timestamp(date_column, "MM/dd/yyyy hh:mm:ss a"))
+
+# filteredColumns = filteredColumns.withColumn("INCIDENT_DATE_TIME-test", to_timestamp("INCIDENT_DATE_TIME", "MM/dd/yyyy hh:mm:ss a"))
+# filteredColumns = filteredColumns.withColumn("ARRIVAL_DATE_TIME", to_timestamp("ARRIVAL_DATE_TIME", "MM/dd/yyyy hh:mm:ss a"))
 filteredColumns = filteredColumns.withColumn("response_time_seconds", 
                    (unix_timestamp("ARRIVAL_DATE_TIME") - unix_timestamp("INCIDENT_DATE_TIME")))
 
+# Add year column
+filteredColumns = filteredColumns.withColumn("year", year("INCIDENT_DATE_TIME"))
+
+# filter data which is not in the range 01 Jan 2023 till 01 Jan 2024
+start_year = 2013
+end_year = 2023
+filteredColumns = filteredColumns.filter(
+    col("year").between(start_year, end_year)
+)
 
 # Calculate the IQR to remove outliers from response_time_seconds
 
@@ -75,10 +88,6 @@ filteredColumns = filteredColumns.filter(
     (filteredColumns["response_time_seconds"] <= upper_bound)
 )
 
-
-# Add year column
-filteredColumns = filteredColumns.withColumn("year", year("INCIDENT_DATE_TIME"))
-
 # Calculate mean and standard deviation of response times per borough and alarm group
 stats_per_borough_alarm = filteredColumns.groupBy("BOROUGH_DESC", "alarm_group") \
                                          .agg(
@@ -90,25 +99,24 @@ stats_per_borough_alarm.show(truncate=False)
 
 
 #ADDED TO MATCH WITH TRAFFIC VOLUME DATA (as prefix 1. - , 2. -, etc. are not present in that dataset)
-filteredColumns = filteredColumns.withColumn("BOROUGH_DESC", regexp_replace("BOROUGH_DESC", "^\d+ - ", ""))
+fire_incident_data_preprocessed = filteredColumns.withColumn("BOROUGH_DESC", regexp_replace("BOROUGH_DESC", "^\d+ - ", ""))
 
 # Traffic volume data preprocessing
 grouped_traffic_volume = traffic_volume_data.groupby(["Boro", "Yr"]).agg(spark_sum("Vol").alias("traffic_volume_counts"))
 
-# Create separate tables for each year (2013–2023)
-for year in range(2013, 2024):
-    yearly_fire_incident_data = filteredColumns.filter(filteredColumns["year"] == year)
+# Calculate mean and standard deviation per borough and alarm group
+grouped_fire_incident_data = fire_incident_data_preprocessed.groupBy("year", "BOROUGH_DESC", "alarm_group") \
+                    .agg(
+                        avg("response_time_seconds").alias("mean_response_time"),
+                        stddev("response_time_seconds").alias("stddev_response_time")
+                    )
 
-    # Calculate mean and standard deviation per borough and alarm group
-    grouped_yearly_fire_incident_data = yearly_fire_incident_data.groupBy("BOROUGH_DESC", "alarm_group") \
-                        .agg(
-                            avg("response_time_seconds").alias("mean_response_time"),
-                            stddev("response_time_seconds").alias("stddev_response_time")
-                        )
-    
+# Create separate tables for each year (2013–2023)
+for year in range(start_year, end_year + 1): #exclusive end
+    yearly_fire_incident_data = grouped_fire_incident_data.filter(grouped_fire_incident_data["year"] == year)
     
     # Pivot the table to match the design
-    pivot_table = grouped_yearly_fire_incident_data.groupBy("BOROUGH_DESC").pivot("alarm_group", ["Initial Alarm", "Standard Alarm", "Critical Alarm"]) \
+    pivot_table = yearly_fire_incident_data.groupBy("BOROUGH_DESC").pivot("alarm_group", ["Initial Alarm", "Standard Alarm", "Critical Alarm"]) \
                        .agg(
                            first("mean_response_time").alias("mean"),
                            first("stddev_response_time").alias("stddev")
@@ -119,6 +127,7 @@ for year in range(2013, 2024):
     yearly_data = pivot_table.join(grouped_yearly_traffic_data, pivot_table["BOROUGH_DESC"] == grouped_yearly_traffic_data["Boro"], "left")
     yearly_data = yearly_data.drop("Boro")
     print(f"Year: {year}")
+    print("new way")
     yearly_data.show(truncate=False)
 
 # Stop SparkSession

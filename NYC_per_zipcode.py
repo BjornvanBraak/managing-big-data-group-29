@@ -18,7 +18,7 @@ filteredColumns = fire_incident_data_NY.select("IM_INCIDENT_KEY", "INCIDENT_DATE
 
 # Turn INCIDENT_DATE_TIME, ARRIVAL_DATE_TIME & LAST_UNIT_CLEARED_DATE_TIME into usable variables
 for date_column in ["INCIDENT_DATE_TIME", "ARRIVAL_DATE_TIME", "LAST_UNIT_CLEARED_DATE_TIME"]:
-    filteredColumns = filteredColumns.withColumn(date_column, to_timestamp(date_column, "MM/dd/yyyy HH:mm:ss a"))
+    filteredColumns = filteredColumns.withColumn(date_column, to_timestamp(date_column, "MM/dd/yyyy hh:mm:ss a"))
 
 # Create a new column for the calculated response_time_seconds & handling_time_seconds
 filteredColumns = filteredColumns.withColumn("response_time_seconds", 
