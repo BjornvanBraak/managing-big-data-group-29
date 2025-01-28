@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, unix_timestamp, avg, stddev, year, when, first, sum as spark_sum, regexp_replace
+from pyspark.sql.functions import col, to_timestamp, unix_timestamp, avg, stddev, year, when, first, sum as spark_sum, regexp_replace, count
 
 spark = SparkSession.builder    \
     .appName("Data Analysis")   \
@@ -8,6 +8,7 @@ spark = SparkSession.builder    \
 spark.sparkContext.setLogLevel("ERROR")
 
 fire_incident_data_NY  = spark.read.csv("/user/s2186047/project/NY-Fire-Incidents.csv", header = True, inferSchema = True)
+firehouse_listings_data_NY = spark.read.csv("/user/s2186047/project/NY-Firehouse-Listing.csv", header=True, inferSchema=True)
 traffic_volume_data = spark.read.csv("/user/s2186047/project/NY-Automated-Traffic-Volume-Counts.csv", header=True, inferSchema=True)
 
 # Fire incident preprocessing
@@ -88,21 +89,31 @@ filteredColumns = filteredColumns.filter(
     (filteredColumns["response_time_seconds"] <= upper_bound)
 )
 
+# Firestation data preprocessing
+fireStationCounts = firehouse_listings_data_NY.groupBy("Borough").agg(
+  count("Borough").alias("Number of Stations")
+)
+
+#ADDED TO MATCH WITH TRAFFIC VOLUME DATA (as prefix 1. - , 2. -, etc. are not present in that dataset)
+fire_incident_data_preprocessed = filteredColumns.withColumn("BOROUGH_DESC", regexp_replace("BOROUGH_DESC", "^\d+ - ", ""))
+
 # Calculate mean and standard deviation of response times per borough and alarm group
-stats_per_borough_alarm = filteredColumns.groupBy("BOROUGH_DESC", "alarm_group") \
+stats_per_borough_alarm = fire_incident_data_preprocessed.groupBy("BOROUGH_DESC", "alarm_group") \
                                          .agg(
                                              avg("response_time_seconds").alias("mean_response_time"),
                                              stddev("response_time_seconds").alias("stddev_response_time")
                                          )
 stats_per_borough_alarm = stats_per_borough_alarm.orderBy("BOROUGH_DESC", "alarm_group")
+stats_per_borough_alarm = stats_per_borough_alarm.join(fireStationCounts, stats_per_borough_alarm["BOROUGH_DESC"]==fireStationCounts["Borough"], "left")
+stats_per_borough_alarm = stats_per_borough_alarm.drop("Borough")
 stats_per_borough_alarm.show(truncate=False)
 
-
-#ADDED TO MATCH WITH TRAFFIC VOLUME DATA (as prefix 1. - , 2. -, etc. are not present in that dataset)
-fire_incident_data_preprocessed = filteredColumns.withColumn("BOROUGH_DESC", regexp_replace("BOROUGH_DESC", "^\d+ - ", ""))
-
 # Traffic volume data preprocessing
-grouped_traffic_volume = traffic_volume_data.groupby(["Boro", "Yr"]).agg(spark_sum("Vol").alias("traffic_volume_counts"))
+grouped_traffic_volume = traffic_volume_data \
+        .filter(col("Yr").between(start_year, end_year)) \
+        .groupby(["Boro", "Yr"]).agg(spark_sum("Vol").alias("traffic_volume_counts"))
+
+
 
 # Calculate mean and standard deviation per borough and alarm group
 grouped_fire_incident_data = fire_incident_data_preprocessed.groupBy("year", "BOROUGH_DESC", "alarm_group") \
