@@ -3,8 +3,8 @@ import plotly.express as px
 
 # Load data
 print('Getting data...')
-sanFranciscoData = pd.read_csv("C:/Users/User/Downloads/sanFranciscoData.csv")
-newYorkData = pd.read_csv("C:/Users/User/Downloads/newYorkData.csv")
+sanFranciscoData = pd.read_csv("sanFrancisco_Map_Data.csv")
+newYorkData = pd.read_csv("newYork_Map_Data.csv")
 
 # Print schemas
 sanFranciscoData.info()
